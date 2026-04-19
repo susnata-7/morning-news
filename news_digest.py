@@ -7,38 +7,37 @@ from zoneinfo import ZoneInfo
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
-TELEGRAM_BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID        = os.getenv("TELEGRAM_CHAT_ID")
-VOICEMONKEY_API_TOKEN   = os.getenv("VOICEMONKEY_API_TOKEN")
-VOICEMONKEY_MONKEY_NAME = os.getenv("VOICEMONKEY_MONKEY_NAME")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+VOICEMONKEY_API_KEY = os.getenv("VOICEMONKEY_API_TOKEN")  # keeping your existing name
 
 # Fail fast
 required = {
     "OPENROUTER_API_KEY": OPENROUTER_API_KEY,
     "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
     "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
-    "VOICEMONKEY_API_TOKEN": VOICEMONKEY_API_TOKEN,
-    "VOICEMONKEY_MONKEY_NAME": VOICEMONKEY_MONKEY_NAME,
+    "VOICEMONKEY_API_TOKEN": VOICEMONKEY_API_KEY,
 }
 
 missing = [k for k, v in required.items() if not v]
 if missing:
     raise ValueError(f"Missing environment variables: {', '.join(missing)}")
 
+# Clean values
 OPENROUTER_API_KEY = OPENROUTER_API_KEY.strip()
+VOICEMONKEY_API_KEY = VOICEMONKEY_API_KEY.strip()
 
 print("Environment check:")
 print("OpenRouter:", bool(OPENROUTER_API_KEY))
 print("Telegram:", bool(TELEGRAM_BOT_TOKEN))
+print("VoiceMonkey:", bool(VOICEMONKEY_API_KEY))
 
 # ─── RSS FEEDS ────────────────────────────────────────────────────────────────
 FEEDS = {
-    "Reuters":        "https://www.reutersagency.com/feed/?best-topics=top-news",
-    "BBC World":      "http://feeds.bbci.co.uk/news/world/rss.xml",
-    "The Hindu":      "https://www.thehindu.com/news/national/feeder/default.rss",
-    "NDTV":           "https://feeds.feedburner.com/ndtvnews-top-stories",
-    "Al Jazeera":     "https://www.aljazeera.com/xml/rss/all.xml",
+    "BBC World": "http://feeds.bbci.co.uk/news/world/rss.xml",
+    "The Hindu": "https://www.thehindu.com/news/national/feeder/default.rss",
+    "NDTV": "https://feeds.feedburner.com/ndtvnews-top-stories",
+    "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
     "Economic Times": "https://economictimes.indiatimes.com/rssfeedsdefault.cms",
 }
 
@@ -54,8 +53,8 @@ def fetch_headlines():
             feed = feedparser.parse(resp.content)
 
             entries = feed.entries[:ARTICLES_PER_FEED]
-
             headlines = []
+
             for e in entries:
                 title = e.get("title", "").strip()
                 summary = e.get("summary", e.get("description", "")).strip()
@@ -73,7 +72,7 @@ def fetch_headlines():
 
     return all_headlines
 
-# ─── AI CALL (OPENROUTER) ─────────────────────────────────────────────────────
+# ─── AI CALL ──────────────────────────────────────────────────────────────────
 def call_ai(prompt):
     try:
         r = requests.post(
@@ -84,9 +83,7 @@ def call_ai(prompt):
             },
             json={
                 "model": "openai/gpt-4o-mini",
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ]
+                "messages": [{"role": "user", "content": prompt}]
             },
             timeout=30
         )
@@ -188,43 +185,37 @@ def send_telegram(text):
         else:
             print(f"Telegram failed: {r.text}")
 
-# ─── ALEXA ───────────────────────────────────────────────────────────────────
-print("VM TOKEN:", repr(VOICEMONKEY_API_TOKEN))
-print("VM MONKEY:", repr(VOICEMONKEY_MONKEY_NAME))
-
+# ─── ALEXA (VOICE MONKEY) ─────────────────────────────────────────────────────
 def send_alexa(text):
     if not text or not text.strip():
         print("Empty Alexa text")
         return
 
-    api_key = VOICEMONKEY_API_TOKEN.strip()
-    monkey = VOICEMONKEY_MONKEY_NAME.strip()
     clean = re.sub(r"[*_`#•\-]", "", text).strip()
-    
+
     success = False
 
-for attempt in range(2):  # try 2 times
-    r = requests.post(
-        "https://api.voicemonkey.io/announcement",
-        headers={
-            "Authorization": VOICEMONKEY_API_TOKEN.strip(),
-            "Content-Type": "application/json"
-        },
-        json={
-            "monkey": VOICEMONKEY_MONKEY_NAME.strip(),
-            "text": clean
-        }
-    )
+    for attempt in range(2):
+        r = requests.post(
+            "https://api.voicemonkey.io/announcement",
+            headers={
+                "Authorization": VOICEMONKEY_API_KEY,
+                "Content-Type": "application/json"
+            },
+            json={
+                "text": clean
+            }
+        )
 
-    if r.status_code == 200:
-        print("Alexa: triggered")
-        success = True
-        break
-    else:
-        print(f"Attempt {attempt+1} failed: {r.status_code} - {r.text}")
+        if r.status_code == 200:
+            print("Alexa: triggered")
+            success = True
+            break
+        else:
+            print(f"Attempt {attempt+1} failed: {r.status_code} - {r.text}")
 
-if not success:
-    print("VoiceMonkey failed after retries")
+    if not success:
+        print("VoiceMonkey failed after retries")
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
