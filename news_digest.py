@@ -189,6 +189,9 @@ def send_telegram(text):
             print(f"Telegram failed: {r.text}")
 
 # ─── ALEXA ───────────────────────────────────────────────────────────────────
+print("VM TOKEN:", repr(VOICEMONKEY_API_TOKEN))
+print("VM MONKEY:", repr(VOICEMONKEY_MONKEY_NAME))
+
 def send_alexa(text):
     if not text or not text.strip():
         print("Empty Alexa text")
