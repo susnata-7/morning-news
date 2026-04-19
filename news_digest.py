@@ -6,8 +6,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-COHERE_API_KEY = os.getenv("COHERE_API_KEY")
-COHERE_MODEL   = os.getenv("COHERE_MODEL", "command")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 TELEGRAM_BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID        = os.getenv("TELEGRAM_CHAT_ID")
@@ -16,7 +15,7 @@ VOICEMONKEY_MONKEY_NAME = os.getenv("VOICEMONKEY_MONKEY_NAME")
 
 # Fail fast
 required = {
-    "COHERE_API_KEY": COHERE_API_KEY,
+    "OPENROUTER_API_KEY": OPENROUTER_API_KEY,
     "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
     "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
     "VOICEMONKEY_API_TOKEN": VOICEMONKEY_API_TOKEN,
@@ -27,15 +26,15 @@ missing = [k for k, v in required.items() if not v]
 if missing:
     raise ValueError(f"Missing environment variables: {', '.join(missing)}")
 
-COHERE_API_KEY = COHERE_API_KEY.strip()
+OPENROUTER_API_KEY = OPENROUTER_API_KEY.strip()
 
 print("Environment check:")
-print("Cohere:", bool(COHERE_API_KEY))
+print("OpenRouter:", bool(OPENROUTER_API_KEY))
 print("Telegram:", bool(TELEGRAM_BOT_TOKEN))
 
 # ─── RSS FEEDS ────────────────────────────────────────────────────────────────
 FEEDS = {
-    "Reuters":        "https://feeds.reuters.com/reuters/topNews",
+    "Reuters":        "https://www.reutersagency.com/feed/?best-topics=top-news",
     "BBC World":      "http://feeds.bbci.co.uk/news/world/rss.xml",
     "The Hindu":      "https://www.thehindu.com/news/national/feeder/default.rss",
     "NDTV":           "https://feeds.feedburner.com/ndtvnews-top-stories",
@@ -53,9 +52,6 @@ def fetch_headlines():
         try:
             resp = requests.get(url, timeout=10)
             feed = feedparser.parse(resp.content)
-
-            if feed.bozo:
-                print(f"Warning: bad feed from {source}")
 
             entries = feed.entries[:ARTICLES_PER_FEED]
 
@@ -77,38 +73,33 @@ def fetch_headlines():
 
     return all_headlines
 
-# ─── AI CALL ──────────────────────────────────────────────────────────────────
+# ─── AI CALL (OPENROUTER) ─────────────────────────────────────────────────────
 def call_ai(prompt):
     try:
         r = requests.post(
-            "https://api.cohere.com/v2/chat",
+            "https://openrouter.ai/api/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {COHERE_API_KEY}",
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json"
             },
             json={
-                "model": COHERE_MODEL,
-                "messages": [{"role": "user", "content": prompt}]
+                "model": "openai/gpt-4o-mini",
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ]
             },
             timeout=30
         )
 
         if r.status_code == 200:
-            print("Cohere OK")
-            data = r.json()
-
-            return (
-                data.get("message", {})
-                    .get("content", [{}])[0]
-                    .get("text", "")
-            )
-
+            print("OpenRouter OK")
+            return r.json()["choices"][0]["message"]["content"]
         else:
-            print(f"Cohere failed ({r.status_code}): {r.text}")
+            print(f"OpenRouter failed ({r.status_code}): {r.text}")
             return None
 
     except Exception as e:
-        print(f"Cohere exception: {e}")
+        print(f"OpenRouter exception: {e}")
         return None
 
 # ─── BUILD TEXT ───────────────────────────────────────────────────────────────
@@ -130,7 +121,7 @@ def build_raw_text(headlines_dict):
             seen.add(key)
             unique.append(line)
 
-    return "\n".join(unique)[:12000]  # token control
+    return "\n".join(unique)[:12000]
 
 # ─── GENERATORS ───────────────────────────────────────────────────────────────
 def generate_telegram_digest(raw_text):
@@ -139,7 +130,7 @@ def generate_telegram_digest(raw_text):
     prompt = f"""You are a news assistant.
 
 - Group into 3–4 sections
-- 2–3 bullets per section
+- 2–3 bullet points per section
 - Under 400 words
 - Conversational tone
 - Use *bold* headers
@@ -171,13 +162,13 @@ Headlines:
 
     if text:
         words = text.split()
-        text = " ".join(words[:90])  # hard limit
+        text = " ".join(words[:90])
 
     return text
 
-# ─── OUTPUTS ──────────────────────────────────────────────────────────────────
+# ─── TELEGRAM ────────────────────────────────────────────────────────────────
 def send_telegram(text):
-    if not text.strip():
+    if not text or not text.strip():
         print("Empty Telegram message")
         return
 
@@ -197,8 +188,9 @@ def send_telegram(text):
         else:
             print(f"Telegram failed: {r.text}")
 
+# ─── ALEXA ───────────────────────────────────────────────────────────────────
 def send_alexa(text):
-    if not text.strip():
+    if not text or not text.strip():
         print("Empty Alexa text")
         return
 
