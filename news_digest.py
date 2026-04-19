@@ -6,7 +6,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-OPENROUTER_API_KEY      = os.environ.get("OPENROUTER_API_KEY",      "your_openrouter_key")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "your_groq_key")
 TELEGRAM_BOT_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN",      "your_telegram_bot_token")
 TELEGRAM_CHAT_ID        = os.environ.get("TELEGRAM_CHAT_ID",        "your_chat_id")
 VOICEMONKEY_API_TOKEN   = os.environ.get("VOICEMONKEY_API_TOKEN",   "your_api_token")
@@ -43,19 +43,19 @@ def fetch_headlines():
             print(f"Failed: {source} - {ex}")
     return all_headlines
 
-# ─── CALL OPENROUTER ──────────────────────────────────────────────────────────
-def call_openrouter(prompt):
+# ─── CALL GROQ ──────────────────────────────────────────────────────────
+
+def call_groq(prompt):
     for model in [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemma-3-27b-it:free",
-    "nvidia/llama-3.3-nemotron-super-49b-v1:free",
-    "qwen/qwen3-235b-a22b:free",
-]:
+        "llama-3.3-70b-versatile",
+        "llama3-70b-8192",
+        "mixtral-8x7b-32768",
+    ]:
         try:
             r = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
+                "https://api.groq.com/openai/v1/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
                     "Content-Type": "application/json",
                 },
                 json={
@@ -66,7 +66,7 @@ def call_openrouter(prompt):
                 timeout=30
             )
             if r.status_code == 200:
-                print(f"OpenRouter OK ({model})")
+                print(f"Groq OK ({model})")
                 return r.json()["choices"][0]["message"]["content"]
             else:
                 print(f"Model failed ({r.status_code}): {model}")
@@ -105,7 +105,7 @@ DAILY DIGEST - {today}
 Big Picture:
 [2 lines]
 """
-    return call_openrouter(prompt)
+    return call_groq(prompt)
 
 # ─── GENERATE ALEXA SUMMARY ───────────────────────────────────────────────────
 def generate_alexa_summary(raw_text):
@@ -122,7 +122,7 @@ Rules:
 Headlines:
 {raw_text}
 """
-    return call_openrouter(prompt)
+    return call_groq(prompt)
 
 # ─── SEND TO TELEGRAM ─────────────────────────────────────────────────────────
 def send_telegram(text):
