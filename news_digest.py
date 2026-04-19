@@ -46,9 +46,11 @@ def fetch_headlines():
 # ─── CALL OPENROUTER ──────────────────────────────────────────────────────────
 def call_openrouter(prompt):
     for model in [
-        "google/gemini-2.0-flash-exp:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-    ]:
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemma-3-27b-it:free",
+    "nvidia/llama-3.3-nemotron-super-49b-v1:free",
+    "qwen/qwen3-235b-a22b:free",
+]:
         try:
             r = requests.post(
                 "https://openrouter.ai/api/v1/chat/completions",
