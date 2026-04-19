@@ -2,8 +2,6 @@ import feedparser
 import requests
 import re
 import os
-import schedule
-import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
