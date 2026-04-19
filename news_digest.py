@@ -6,7 +6,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "your_groq_key")
+COHERE_API_KEY = os.environ.get("COHERE_API_KEY", "your_cohere_key")
 TELEGRAM_BOT_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN",      "your_telegram_bot_token")
 TELEGRAM_CHAT_ID        = os.environ.get("TELEGRAM_CHAT_ID",        "your_chat_id")
 VOICEMONKEY_API_TOKEN   = os.environ.get("VOICEMONKEY_API_TOKEN",   "your_api_token")
@@ -45,34 +45,25 @@ def fetch_headlines():
 
 # ─── CALL GROQ ──────────────────────────────────────────────────────────
 
-def call_groq(prompt):
-    for model in [
-        "llama-3.3-70b-versatile",
-        "llama3-70b-8192",
-        "mixtral-8x7b-32768",
-    ]:
-        try:
-            r = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.4,
-                },
-                timeout=30
-            )
-            if r.status_code == 200:
-                print(f"Groq OK ({model})")
-                return r.json()["choices"][0]["message"]["content"]
-            else:
-                print(f"Model failed ({r.status_code}): {model}")
-        except Exception as ex:
-            print(f"Model error: {model} - {ex}")
-    return None
+def call_ai(prompt):
+    r = requests.post(
+        "https://api.cohere.com/v2/chat",
+        headers={
+            "Authorization": f"Bearer {COHERE_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json={
+            "model": "command-r",
+            "messages": [{"role": "user", "content": prompt}]
+        },
+        timeout=30
+    )
+    if r.status_code == 200:
+        print("Cohere OK")
+        return r.json()["message"]["content"][0]["text"]
+    else:
+        print(f"Cohere failed ({r.status_code}): {r.text}")
+        return None
 
 # ─── BUILD RAW TEXT ───────────────────────────────────────────────────────────
 def build_raw_text(headlines_dict):
@@ -105,7 +96,7 @@ DAILY DIGEST - {today}
 Big Picture:
 [2 lines]
 """
-    return call_groq(prompt)
+    return call_ai(prompt)
 
 # ─── GENERATE ALEXA SUMMARY ───────────────────────────────────────────────────
 def generate_alexa_summary(raw_text):
@@ -122,7 +113,7 @@ Rules:
 Headlines:
 {raw_text}
 """
-    return call_groq(prompt)
+    return call_ai(prompt)
 
 # ─── SEND TO TELEGRAM ─────────────────────────────────────────────────────────
 def send_telegram(text):
