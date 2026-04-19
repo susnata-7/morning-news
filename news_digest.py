@@ -6,14 +6,27 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-COHERE_API_KEY = os.environ.get("COHERE_API_KEY")
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 
-if not COHERE_API_KEY:
-    raise ValueError("COHERE_API_KEY is missing")
-TELEGRAM_BOT_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN",      "your_telegram_bot_token")
-TELEGRAM_CHAT_ID        = os.environ.get("TELEGRAM_CHAT_ID",        "your_chat_id")
-VOICEMONKEY_API_TOKEN   = os.environ.get("VOICEMONKEY_API_TOKEN",   "your_api_token")
-VOICEMONKEY_MONKEY_NAME = os.environ.get("VOICEMONKEY_MONKEY_NAME", "your_monkey_name")
+TELEGRAM_BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID        = os.getenv("TELEGRAM_CHAT_ID")
+VOICEMONKEY_API_TOKEN   = os.getenv("VOICEMONKEY_API_TOKEN")
+VOICEMONKEY_MONKEY_NAME = os.getenv("VOICEMONKEY_MONKEY_NAME")
+
+# Fail fast if missing
+required_vars = {
+    "COHERE_API_KEY": COHERE_API_KEY,
+    "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+    "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
+    "VOICEMONKEY_API_TOKEN": VOICEMONKEY_API_TOKEN,
+    "VOICEMONKEY_MONKEY_NAME": VOICEMONKEY_MONKEY_NAME,
+}
+
+missing = [k for k, v in required_vars.items() if not v]
+if missing:
+    raise ValueError(f"Missing environment variables: {', '.join(missing)}")
+
+COHERE_API_KEY = COHERE_API_KEY.strip()
 
 # ─── RSS FEEDS ────────────────────────────────────────────────────────────────
 FEEDS = {
@@ -34,38 +47,58 @@ def fetch_headlines():
         try:
             feed = feedparser.parse(url)
             entries = feed.entries[:ARTICLES_PER_FEED]
+
             headlines = []
             for e in entries:
-                title   = e.get("title", "").strip()
+                title = e.get("title", "").strip()
                 summary = e.get("summary", e.get("description", "")).strip()
                 summary = re.sub(r"<[^>]+>", "", summary)[:300]
                 headlines.append(f"- {title}: {summary}")
-            all_headlines[source] = headlines
-            print(f"Fetched: {source}")
+
+            if headlines:
+                all_headlines[source] = headlines
+                print(f"Fetched: {source}")
+
         except Exception as ex:
             print(f"Failed: {source} - {ex}")
+
     return all_headlines
 
-# ─── CALL GROQ ──────────────────────────────────────────────────────────
-
+# ─── CALL COHERE ──────────────────────────────────────────────────────────────
 def call_ai(prompt):
-    r = requests.post(
-        "https://api.cohere.com/v2/chat",
-        headers={
-            "Authorization": f"Bearer {COHERE_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": "command-r",
-            "messages": [{"role": "user", "content": prompt}]
-        },
-        timeout=30
-    )
-    if r.status_code == 200:
-        print("Cohere OK")
-        return r.json()["message"]["content"][0]["text"]
-    else:
-        print(f"Cohere failed ({r.status_code}): {r.text}")
+    try:
+        r = requests.post(
+            "https://api.cohere.com/v2/chat",
+            headers={
+                "Authorization": f"Bearer {COHERE_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "command-r",
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ]
+            },
+            timeout=30
+        )
+
+        if r.status_code == 200:
+            print("Cohere OK")
+            data = r.json()
+
+            # Safe parsing
+            return (
+                data.get("message", {})
+                    .get("content", [{}])[0]
+                    .get("text")
+            )
+
+        else:
+            print(f"Cohere failed ({r.status_code}): {r.text}")
+            return None
+
+    except Exception as e:
+        print(f"Cohere exception: {e}")
         return None
 
 # ─── BUILD RAW TEXT ───────────────────────────────────────────────────────────
@@ -76,73 +109,80 @@ def build_raw_text(headlines_dict):
         lines.extend(items)
     return "\n".join(lines)
 
-# ─── GENERATE TELEGRAM DIGEST ────────────────────────────────────────────────
+# ─── TELEGRAM DIGEST ─────────────────────────────────────────────────────────
 def generate_telegram_digest(raw_text):
     today = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y")
-    prompt = f"""You are a sharp news briefing assistant. Below are today's top headlines from Indian and global sources.
 
-Your job:
-1. Group into 3-4 thematic sections (India, World, Economy, Tech)
-2. Write 2-3 bullet points per section summarising key stories
-3. End with a 2-line Big Picture - the most important thing happening today
-4. Under 400 words total
-5. Plain conversational English, no jargon
+    prompt = f"""You are a sharp news briefing assistant.
+
+Task:
+- Group into 3-4 sections (India, World, Economy, Tech)
+- 2-3 bullet points per section
+- End with Big Picture (2 lines)
+- Under 400 words
+- Conversational English
 
 Headlines:
 {raw_text}
 
-Output:
+Output format:
+
 DAILY DIGEST - {today}
 
-[sections with emoji headers and bullet points]
+[Sections]
 
 Big Picture:
-[2 lines]
 """
+
     return call_ai(prompt)
 
-# ─── GENERATE ALEXA SUMMARY ───────────────────────────────────────────────────
+# ─── ALEXA SUMMARY ────────────────────────────────────────────────────────────
 def generate_alexa_summary(raw_text):
-    prompt = f"""You are a radio news anchor writing a script for Alexa to read aloud.
+    prompt = f"""Write a short Alexa news briefing.
 
 Rules:
-- Start with: Good morning. Here is your news briefing for today.
-- Cover 4 to 5 most important stories across India and the world
-- Natural spoken English only - no bullet points, no symbols, no dashes
-- 1 to 2 sentences per story
-- End with: That is your morning briefing. Have a great day.
-- Strict limit: 70 to 90 words total.
+- Start: Good morning. Here is your news briefing for today.
+- 4–5 key stories
+- Natural spoken English
+- 70–90 words
+- End: That is your morning briefing. Have a great day.
 
 Headlines:
 {raw_text}
 """
+
     return call_ai(prompt)
 
-# ─── SEND TO TELEGRAM ─────────────────────────────────────────────────────────
+# ─── TELEGRAM ────────────────────────────────────────────────────────────────
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
     chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+
     for chunk in chunks:
         r = requests.post(url, json={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": chunk,
         })
+
         if r.status_code == 200:
             print("Telegram: sent")
         else:
             print(f"Telegram failed: {r.text}")
 
-# ─── SEND TO ALEXA ────────────────────────────────────────────────────────────
+# ─── ALEXA ───────────────────────────────────────────────────────────────────
 def send_alexa(spoken_text):
     clean = re.sub(r"[*_`#•\-]", "", spoken_text).strip()
+
     r = requests.get(
         "https://api.voicemonkey.io/trigger",
         params={
             "access_token": VOICEMONKEY_API_TOKEN,
-            "monkey":       VOICEMONKEY_MONKEY_NAME,
+            "monkey": VOICEMONKEY_MONKEY_NAME,
             "announcement": clean,
         }
     )
+
     if r.status_code == 200:
         print("Alexa: triggered")
     else:
@@ -150,12 +190,12 @@ def send_alexa(spoken_text):
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print(f"[{datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%d %b %Y %H:%M')} IST] Starting...")
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    print(f"[{now.strftime('%d %b %Y %H:%M')} IST] Starting...")
 
     headlines = fetch_headlines()
     if not headlines:
-        print("No headlines. Exiting.")
-        exit(1)
+        raise RuntimeError("No headlines fetched")
 
     raw_text = build_raw_text(headlines)
 
@@ -166,16 +206,13 @@ if __name__ == "__main__":
     alexa_summary = generate_alexa_summary(raw_text)
 
     if telegram_digest:
-        print(telegram_digest)
         send_telegram(telegram_digest)
     else:
-        print("Failed to generate Telegram digest")
+        print("Telegram generation failed")
 
     if alexa_summary:
-        print(alexa_summary)
         send_alexa(alexa_summary)
     else:
-        print("Failed to generate Alexa summary")
+        print("Alexa generation failed")
 
     print("[Done]")
-    
