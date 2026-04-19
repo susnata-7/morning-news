@@ -7,14 +7,15 @@ from zoneinfo import ZoneInfo
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 COHERE_API_KEY = os.getenv("COHERE_API_KEY")
+COHERE_MODEL   = os.getenv("COHERE_MODEL", "command")
 
 TELEGRAM_BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID        = os.getenv("TELEGRAM_CHAT_ID")
 VOICEMONKEY_API_TOKEN   = os.getenv("VOICEMONKEY_API_TOKEN")
 VOICEMONKEY_MONKEY_NAME = os.getenv("VOICEMONKEY_MONKEY_NAME")
 
-# Fail fast if missing
-required_vars = {
+# Fail fast
+required = {
     "COHERE_API_KEY": COHERE_API_KEY,
     "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
     "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
@@ -22,11 +23,15 @@ required_vars = {
     "VOICEMONKEY_MONKEY_NAME": VOICEMONKEY_MONKEY_NAME,
 }
 
-missing = [k for k, v in required_vars.items() if not v]
+missing = [k for k, v in required.items() if not v]
 if missing:
     raise ValueError(f"Missing environment variables: {', '.join(missing)}")
 
 COHERE_API_KEY = COHERE_API_KEY.strip()
+
+print("Environment check:")
+print("Cohere:", bool(COHERE_API_KEY))
+print("Telegram:", bool(TELEGRAM_BOT_TOKEN))
 
 # ─── RSS FEEDS ────────────────────────────────────────────────────────────────
 FEEDS = {
@@ -43,9 +48,15 @@ ARTICLES_PER_FEED = 3
 # ─── FETCH HEADLINES ──────────────────────────────────────────────────────────
 def fetch_headlines():
     all_headlines = {}
+
     for source, url in FEEDS.items():
         try:
-            feed = feedparser.parse(url)
+            resp = requests.get(url, timeout=10)
+            feed = feedparser.parse(resp.content)
+
+            if feed.bozo:
+                print(f"Warning: bad feed from {source}")
+
             entries = feed.entries[:ARTICLES_PER_FEED]
 
             headlines = []
@@ -53,7 +64,9 @@ def fetch_headlines():
                 title = e.get("title", "").strip()
                 summary = e.get("summary", e.get("description", "")).strip()
                 summary = re.sub(r"<[^>]+>", "", summary)[:300]
-                headlines.append(f"- {title}: {summary}")
+
+                if title:
+                    headlines.append(f"- {title}: {summary}")
 
             if headlines:
                 all_headlines[source] = headlines
@@ -64,8 +77,7 @@ def fetch_headlines():
 
     return all_headlines
 
-# ─── CALL COHERE ──────────────────────────────────────────────────────────────
-
+# ─── AI CALL ──────────────────────────────────────────────────────────────────
 def call_ai(prompt):
     try:
         r = requests.post(
@@ -75,10 +87,8 @@ def call_ai(prompt):
                 "Content-Type": "application/json"
             },
             json={
-                "model": "command-r-plus",
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ]
+                "model": COHERE_MODEL,
+                "messages": [{"role": "user", "content": prompt}]
             },
             timeout=30
         )
@@ -86,7 +96,13 @@ def call_ai(prompt):
         if r.status_code == 200:
             print("Cohere OK")
             data = r.json()
-            return data.get("message", {}).get("content", [{}])[0].get("text")
+
+            return (
+                data.get("message", {})
+                    .get("content", [{}])[0]
+                    .get("text", "")
+            )
+
         else:
             print(f"Cohere failed ({r.status_code}): {r.text}")
             return None
@@ -95,60 +111,76 @@ def call_ai(prompt):
         print(f"Cohere exception: {e}")
         return None
 
-# ─── BUILD RAW TEXT ───────────────────────────────────────────────────────────
+# ─── BUILD TEXT ───────────────────────────────────────────────────────────────
 def build_raw_text(headlines_dict):
     lines = []
+
     for source, items in headlines_dict.items():
         lines.append(f"\n[{source}]")
         lines.extend(items)
-    return "\n".join(lines)
 
-# ─── TELEGRAM DIGEST ─────────────────────────────────────────────────────────
+    text = "\n".join(lines)
+
+    # Deduplicate
+    seen = set()
+    unique = []
+    for line in text.split("\n"):
+        key = line[:80]
+        if key not in seen:
+            seen.add(key)
+            unique.append(line)
+
+    return "\n".join(unique)[:12000]  # token control
+
+# ─── GENERATORS ───────────────────────────────────────────────────────────────
 def generate_telegram_digest(raw_text):
     today = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y")
 
-    prompt = f"""You are a sharp news briefing assistant.
+    prompt = f"""You are a news assistant.
 
-Task:
-- Group into 3-4 sections (India, World, Economy, Tech)
-- 2-3 bullet points per section
-- End with Big Picture (2 lines)
+- Group into 3–4 sections
+- 2–3 bullets per section
 - Under 400 words
-- Conversational English
+- Conversational tone
+- Use *bold* headers
 
 Headlines:
 {raw_text}
 
-Output format:
+Output:
 
 DAILY DIGEST - {today}
-
-[Sections]
-
-Big Picture:
 """
 
     return call_ai(prompt)
 
-# ─── ALEXA SUMMARY ────────────────────────────────────────────────────────────
 def generate_alexa_summary(raw_text):
-    prompt = f"""Write a short Alexa news briefing.
+    prompt = f"""Write a spoken news briefing.
 
-Rules:
 - Start: Good morning. Here is your news briefing for today.
-- 4–5 key stories
-- Natural spoken English
+- 4–5 stories
 - 70–90 words
+- Natural speech
 - End: That is your morning briefing. Have a great day.
 
 Headlines:
 {raw_text}
 """
 
-    return call_ai(prompt)
+    text = call_ai(prompt)
 
-# ─── TELEGRAM ────────────────────────────────────────────────────────────────
+    if text:
+        words = text.split()
+        text = " ".join(words[:90])  # hard limit
+
+    return text
+
+# ─── OUTPUTS ──────────────────────────────────────────────────────────────────
 def send_telegram(text):
+    if not text.strip():
+        print("Empty Telegram message")
+        return
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
     chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
@@ -157,6 +189,7 @@ def send_telegram(text):
         r = requests.post(url, json={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": chunk,
+            "parse_mode": "Markdown"
         })
 
         if r.status_code == 200:
@@ -164,9 +197,12 @@ def send_telegram(text):
         else:
             print(f"Telegram failed: {r.text}")
 
-# ─── ALEXA ───────────────────────────────────────────────────────────────────
-def send_alexa(spoken_text):
-    clean = re.sub(r"[*_`#•\-]", "", spoken_text).strip()
+def send_alexa(text):
+    if not text.strip():
+        print("Empty Alexa text")
+        return
+
+    clean = re.sub(r"[*_`#•\-]", "", text).strip()
 
     r = requests.get(
         "https://api.voicemonkey.io/trigger",
