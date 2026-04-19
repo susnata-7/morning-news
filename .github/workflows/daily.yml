@@ -24,6 +24,7 @@ jobs:
       - name: Run digest
         env:
           COHERE_API_KEY:           ${{ secrets.COHERE_API_KEY }}
+          COHERE_MODEL:             command
           TELEGRAM_BOT_TOKEN:       ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:         ${{ secrets.TELEGRAM_CHAT_ID }}
           VOICEMONKEY_API_TOKEN:    ${{ secrets.VOICEMONKEY_API_TOKEN }}
