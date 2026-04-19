@@ -65,6 +65,7 @@ def fetch_headlines():
     return all_headlines
 
 # ─── CALL COHERE ──────────────────────────────────────────────────────────────
+
 def call_ai(prompt):
     try:
         r = requests.post(
@@ -74,7 +75,7 @@ def call_ai(prompt):
                 "Content-Type": "application/json"
             },
             json={
-                "model": "command-r",
+                "model": "command-r-plus",
                 "messages": [
                     {"role": "user", "content": prompt}
                 ]
@@ -85,14 +86,7 @@ def call_ai(prompt):
         if r.status_code == 200:
             print("Cohere OK")
             data = r.json()
-
-            # Safe parsing
-            return (
-                data.get("message", {})
-                    .get("content", [{}])[0]
-                    .get("text")
-            )
-
+            return data.get("message", {}).get("content", [{}])[0].get("text")
         else:
             print(f"Cohere failed ({r.status_code}): {r.text}")
             return None
