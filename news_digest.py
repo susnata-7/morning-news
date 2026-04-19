@@ -192,17 +192,3 @@ def run_digest():
         print("✗ Failed to generate Alexa summary")
 
     print("\n[Done]\n")
-
-# ─── SCHEDULER ────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    print(f"News Digest Bot started. Will run daily at {SEND_TIME} IST.")
-
-    # Run once immediately on start (comment out if not needed)
-    run_digest()
-
-    # Schedule daily at configured time
-    schedule.every().day.at(SEND_TIME).do(run_digest)
-
-    while True:
-        schedule.run_pending()
-        time.sleep(60)
