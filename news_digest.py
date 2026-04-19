@@ -6,7 +6,10 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-COHERE_API_KEY = os.environ.get("COHERE_API_KEY", "your_cohere_key")
+COHERE_API_KEY = os.environ.get("COHERE_API_KEY")
+
+if not COHERE_API_KEY:
+    raise ValueError("COHERE_API_KEY is missing")
 TELEGRAM_BOT_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN",      "your_telegram_bot_token")
 TELEGRAM_CHAT_ID        = os.environ.get("TELEGRAM_CHAT_ID",        "your_chat_id")
 VOICEMONKEY_API_TOKEN   = os.environ.get("VOICEMONKEY_API_TOKEN",   "your_api_token")
