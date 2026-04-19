@@ -200,23 +200,31 @@ def send_alexa(text):
     api_key = VOICEMONKEY_API_TOKEN.strip()
     monkey = VOICEMONKEY_MONKEY_NAME.strip()
     clean = re.sub(r"[*_`#•\-]", "", text).strip()
+    
+    success = False
 
+for attempt in range(2):  # try 2 times
     r = requests.post(
         "https://api.voicemonkey.io/announcement",
         headers={
-            "Authorization": api_key,
+            "Authorization": VOICEMONKEY_API_TOKEN.strip(),
             "Content-Type": "application/json"
         },
         json={
-            "monkey": monkey,
+            "monkey": VOICEMONKEY_MONKEY_NAME.strip(),
             "text": clean
         }
     )
 
     if r.status_code == 200:
         print("Alexa: triggered")
+        success = True
+        break
     else:
-        print(f"VoiceMonkey failed: {r.status_code} - {r.text}")
+        print(f"Attempt {attempt+1} failed: {r.status_code} - {r.text}")
+
+if not success:
+    print("VoiceMonkey failed after retries")
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
