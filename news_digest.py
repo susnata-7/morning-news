@@ -197,14 +197,19 @@ def send_alexa(text):
         print("Empty Alexa text")
         return
 
+    api_key = VOICEMONKEY_API_TOKEN.strip()
+    monkey = VOICEMONKEY_MONKEY_NAME.strip()
     clean = re.sub(r"[*_`#•\-]", "", text).strip()
 
-    r = requests.get(
-        "https://api.voicemonkey.io/trigger",
-        params={
-            "access_token": VOICEMONKEY_API_TOKEN,
-            "monkey": VOICEMONKEY_MONKEY_NAME,
-            "announcement": clean,
+    r = requests.post(
+        "https://api.voicemonkey.io/announcement",
+        headers={
+            "Authorization": api_key,
+            "Content-Type": "application/json"
+        },
+        json={
+            "monkey": monkey,
+            "text": clean
         }
     )
 
